@@ -100,9 +100,9 @@ ais :: [(String, AIFunc)]
 ais =
   [("firstLegal", firstPick),
   ("greedy", greedyPick),
-  ("fullMinimax",fullMinimaxPick),
   ("partialMinimax",partialMinimaxPick),
-  ("fullPrunedMinimax",fullPrunedMinimaxPick)]
+  ("minimax",minimaxPick),
+  ("default",alphaBetaMinimaxPick)]
 
 {-
  AIs.
@@ -124,20 +124,20 @@ greedyPick state _ = case gameStatus state of
 -- minimax AI (not pruned) limited to a lookahead of 3
 partialMinimaxPick :: AIFunc
 partialMinimaxPick state _ = case gameStatus state of
-  Turn player -> TakeCard (bestRank player (gsTreeRank state 3))
+  Turn player -> TakeCard (bestRank player (scoreDiffHeuristicRank state 3))
   _ -> error "partialMinimaxPick: called on finished game"
 
 -- minimax AI (not pruned) with highest lookahead possible
-fullMinimaxPick :: AIFunc
-fullMinimaxPick state lookahead = case gameStatus state of
-  Turn player -> TakeCard (bestRank player (gsTreeRank state lookahead))
-  _ -> error "fullMinimaxPick: called on finished game"
+minimaxPick :: AIFunc
+minimaxPick state lookahead = case gameStatus state of
+  Turn player -> TakeCard (bestRank player (scoreDiffHeuristicRank state lookahead))
+  _ -> error "minimaxPick: called on finished game"
 
 -- minimax AI (pruned) with highest lookahead possible
-fullPrunedMinimaxPick :: AIFunc
-fullPrunedMinimaxPick state lookahead = case gameStatus state of
-  Turn player -> TakeCard (bestRank player (gsTreeRank state lookahead))
-  _ -> error "fullPrunedMinimaxPick: called on finished game"
+alphaBetaMinimaxPick :: AIFunc
+alphaBetaMinimaxPick state lookahead = case gameStatus state of
+  Turn player -> TakeCard (bestRank player (scoreDiffABHeuristicRank state lookahead))
+  _ -> error "alphaBetaMinimaxPick: called on finished game"
 
 {-
  Ranking functions which associate each pick with a value.
@@ -177,11 +177,17 @@ greedyRank (GameState s p1h p1c p2h p2c) = case s of
     listify :: a -> [a]
     listify x = [x]
 
--- | Generate heuristic ranks from a tree of GameStates based on score difference
+-- | Generate (unpruned) heuristic ranks from a tree of GameStates based on score difference
 scoreDiffHeuristicRank :: GameState -> Int -> [(Card,Int)]
 scoreDiffHeuristicRank gs@(GameState s p1h _ p2h _) lookahead = case s of
-  Turn Player1 -> zip p1h (map (`stateValue` lookahead) (gsMoves gs))
-  _ -> zip p2h (map (`stateValue` lookahead) (gsMoves gs))
+  Turn Player1 -> zip p1h (map (`scoreDiffValue` lookahead) (gsMoves gs))
+  _ -> zip p2h (map (`scoreDiffValue` lookahead) (gsMoves gs))
+
+-- | Generate (alpha-beta pruned) heuristic ranks from a tree of GameStates based on score difference
+scoreDiffABHeuristicRank :: GameState -> Int -> [(Card,Int)]
+scoreDiffABHeuristicRank gs@(GameState s p1h _ p2h _) lookahead = case s of
+  Turn Player1 -> zip p1h (map (`scoreDiffABValue` lookahead) (gsMoves gs))
+  _ -> zip p2h (map (`scoreDiffABValue` lookahead) (gsMoves gs))
 
 {-
  Functions to help calculate ranks.
@@ -200,7 +206,7 @@ buildGSTreeFull gs = case gameStatus gs of
   Finished -> GSTree gs []
   _ -> GSTree gs (map buildGSTreeFull (gsMoves gs))
 
--- | Build a tree of possible GameStates with a depth of lookahead
+-- | Build a partial tree of possible GameStates with a depth of lookahead
 buildGSTree :: GameState -> Int -> GSTree GameState
 buildGSTree gameState lookahead = buildGSTreeHelper 0 lookahead gameState
   where
@@ -212,17 +218,44 @@ buildGSTree gameState lookahead = buildGSTreeHelper 0 lookahead gameState
       | otherwise =
         GSTree gs []
 
--- | Assign a value to a given G
+-- | Score difference for heuristics
+scoreDiff :: GameState -> Int
+scoreDiff (GameState _ _ p1c _ p2c) = scoreCards p1c - scoreCards p2c
+
+-- | Assign a value to a given GameState based on score difference
 -- where max is Player1 and min is Player2
-scoreDiffGSValue :: GameState -> Int -> Int
-scoreDiffGSValue gameState lookahead = scoreDiffGSValueHelper (buildGSTree gameState lookahead)
+scoreDiffValue :: GameState -> Int -> Int
+scoreDiffValue gameState lookahead = scoreDiffGSValueHelper (buildGSTree gameState lookahead)
   where
     scoreDiffGSValueHelper :: GSTree GameState -> Int
     scoreDiffGSValueHelper gsTree = case gsTree of
       GSTree gs [] -> scoreDiff gs
       GSTree gs list -> case gameStatus gs of
           Turn Player1 -> maximum (map scoreDiffGSValueHelper list)
-          _ -> minimum (map scoreDiffGSValueHelper list)
+          Turn Player2 -> minimum (map scoreDiffGSValueHelper list)
+          _ -> error "scoreDiffValue: game finished"
 
-    scoreDiff :: GameState -> Int
-    scoreDiff (GameState _ _ p1c _ p2c) = scoreCards p1c - scoreCards p2c
+-- | Assign a value to a given GameState based on score difference with alpha-beta pruning
+-- where max is Player1 and min is Player2
+scoreDiffABValue :: GameState -> Int -> Int
+scoreDiffABValue gameState lookahead = scoreDiffABValueHelper (-10000) 10000 (buildGSTree gameState lookahead)
+  where
+    scoreDiffABValueHelper :: Int -> Int -> GSTree GameState -> Int
+    scoreDiffABValueHelper alpha beta gsTree = case gsTree of
+      GSTree gs [] -> scoreDiff gs
+      GSTree gs list@(x:_) -> case gameStatus gs of
+        Turn Player1 -> maxSearch (scoreDiffABValueHelper alpha beta x) list alpha beta
+        Turn Player2 -> minSearch (scoreDiffABValueHelper alpha beta x) list alpha beta
+        _ -> error "scoreDiffValue: game finished"
+
+    -- prune beta
+    maxSearch :: Int -> [GSTree GameState] -> Int -> Int -> Int
+    maxSearch value list a b
+      | maximum [a,value] >= b = maximum [a,value]
+      | otherwise = (maximum (map (scoreDiffABValueHelper (maximum [a,value]) b) list))
+
+    -- prune alpha
+    minSearch :: Int -> [GSTree GameState] -> Int -> Int -> Int
+    minSearch value list a b
+      | a >= minimum [b,value] = minimum [b,value]
+      | otherwise = (minimum (map (scoreDiffABValueHelper a (minimum [b,value])) list))
