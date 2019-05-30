@@ -7,6 +7,7 @@ Maintainer  : u6947396@anu.edu.au
 module AI where
 
 import SushiGo
+import ListUtils
 
 -- | The type of AI functions. Do not change this.
 --
@@ -59,10 +60,14 @@ initialState4 =
 
 initialState5 :: GameState
 initialState5 =
-  initialGame [(Nigiri 1),(Nigiri 1),(Wasabi Nothing),Dumplings,Eel,Tofu,Sashimi,(Nigiri 3),
-  (Nigiri 2),(Wasabi Nothing),Dumplings,Eel,Tofu,Sashimi,Tofu] [(Nigiri 2),(Nigiri 2),
-  (Wasabi Nothing),Dumplings,Eel,Tofu,Sashimi,(Nigiri 3),(Nigiri 1),(Wasabi Nothing),
-  Dumplings,Eel,Tofu,Sashimi,Sashimi]
+  initialGame [(Nigiri 1),(Nigiri 1),(Nigiri 2),(Nigiri 3),(Wasabi Nothing),(Wasabi Nothing)
+  ,Dumplings,Dumplings,Eel,Eel,Tofu,Tofu,Tofu,Sashimi,Sashimi] [(Nigiri 1),(Nigiri 2),(Nigiri 2),(Nigiri 3),
+  (Wasabi Nothing),(Wasabi Nothing),Dumplings,Dumplings,Eel,Eel,Eel,Tofu,Tofu,Sashimi,Sashimi]
+
+cards1 :: [Card]
+cards1 =
+  [(Nigiri 1),(Nigiri 1),(Nigiri 2),(Nigiri 3),(Wasabi Nothing),(Wasabi Nothing),Dumplings,Dumplings,Eel,Eel,
+  Tofu,Tofu,Tofu,Sashimi,Sashimi]
 
 -- GameStates that are partially complete
 midState1 :: GameState
@@ -79,6 +84,18 @@ midState2 =
 midState3 :: GameState
 midState3 =
   GameState (Turn Player1) [(Nigiri 2)] [] [(Nigiri 1)] []
+
+midState4 :: GameState
+midState4 =
+  GameState (Turn Player1) [Eel,Eel] [] [Sashimi,Sashimi] []
+
+midState5 :: GameState
+midState5 =
+  GameState (Turn Player1) [(Nigiri 1),(Nigiri 3),(Wasabi Nothing),Sashimi,Sashimi,Tofu] [(Nigiri 1),Sashimi] [(Nigiri 2),(Nigiri 2),(Wasabi Nothing),Tofu,Tofu,Eel] [Eel,Eel]
+
+midState6 :: GameState
+midState6 =
+  GameState (Turn Player1) [Sashimi,(Nigiri 1),(Nigiri 1),Dumplings,Dumplings,Eel,Eel,Eel,Eel,Eel,Tofu,Tofu,Tofu] [(Nigiri 2),(Nigiri 3)] [(Nigiri 1),(Nigiri 2),(Nigiri 2),(Nigiri 2),Eel,Eel,Eel,Eel,Eel,Tofu,Tofu,Tofu,Tofu] [(Nigiri 2),(Nigiri 3)]
 
 -- GameStates that are finished
 finishedState1 :: GameState
@@ -102,7 +119,9 @@ ais =
   ("greedy", greedyPick),
   ("partialMinimax",partialMinimaxPick),
   ("minimax",minimaxPick),
-  ("default",alphaBetaMinimaxPick)]
+  ("alphaBetaMinimax",alphaBetaMinimaxPick),
+  ("trimmedMinimax",trimmedMinimaxPick),
+  ("default",cleverTrimmedMinimaxPick)]
 
 {-
  AIs.
@@ -124,20 +143,34 @@ greedyPick state _ = case gameStatus state of
 -- minimax AI (not pruned) limited to a lookahead of 3
 partialMinimaxPick :: AIFunc
 partialMinimaxPick state _ = case gameStatus state of
-  Turn player -> TakeCard (bestRank player (scoreDiffHeuristicRank state 3))
+  Turn player -> TakeCard (bestRank player (scoreDiffRank state 3))
   _ -> error "partialMinimaxPick: called on finished game"
 
 -- minimax AI (not pruned) with highest lookahead possible
 minimaxPick :: AIFunc
 minimaxPick state lookahead = case gameStatus state of
-  Turn player -> TakeCard (bestRank player (scoreDiffHeuristicRank state lookahead))
+  Turn player -> TakeCard (bestRank player (scoreDiffRank state lookahead))
   _ -> error "minimaxPick: called on finished game"
 
 -- minimax AI (pruned) with highest lookahead possible
 alphaBetaMinimaxPick :: AIFunc
 alphaBetaMinimaxPick state lookahead = case gameStatus state of
-  Turn player -> TakeCard (bestRank player (scoreDiffABHeuristicRank state lookahead))
+  Turn player -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
   _ -> error "alphaBetaMinimaxPick: called on finished game"
+
+trimmedMinimaxPick :: AIFunc
+trimmedMinimaxPick state lookahead = case gameStatus state of
+  Turn player
+    | length (handFor player state) < 6 -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
+    | otherwise -> TakeCard (bestRank player (scoreDiffTrimmedRank state lookahead))
+  _ -> error "trimmedMinimaxPick: called on finished game"
+
+cleverTrimmedMinimaxPick :: AIFunc
+cleverTrimmedMinimaxPick state lookahead = case gameStatus state of
+  Turn player
+    | length (handFor player state) < 6 -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
+    | otherwise -> TakeCard (bestRank player (cleverTrimmedRank state lookahead))
+  _ -> error "cleverTrimmedMinimaxPick: called on finished game"
 
 {-
  Ranking functions which associate each pick with a value.
@@ -145,7 +178,7 @@ alphaBetaMinimaxPick state lookahead = case gameStatus state of
 
 -- | Find the best rank for the relevant player from a list of weighted picks
 -- where max is Player1 and min is Player2
-bestRank :: Player -> [(Card,Int)] -> Card
+bestRank :: Player -> [(Card,Double)] -> Card
 bestRank player handOptions = case handOptions of
   x:xs
     | player == Player1 -> maxRank xs x
@@ -153,52 +186,134 @@ bestRank player handOptions = case handOptions of
   _ -> error "greedyGreatest: hand is empty"
 
 -- | Find max rank from a list of weighted picks
-maxRank :: [(Card,Int)] -> (Card,Int) -> Card
+maxRank :: [(Card,Double)] -> (Card,Double) -> Card
 maxRank options (currCard,currScore) = case options of
   [] -> currCard
   (card,score):xs
     | score > currScore -> maxRank xs (card,score)
+    | score == currScore && (currCard == Sashimi || currCard == Tofu) -> maxRank xs (card,score)
     | otherwise -> maxRank xs (currCard,currScore)
 
 -- | Find min rank from a list of weighted picks
-minRank :: [(Card,Int)] -> (Card,Int) -> Card
+minRank :: [(Card,Double)] -> (Card,Double) -> Card
 minRank options (currCard,currScore) = case options of
   [] -> currCard
   (card,score):xs
     | score < currScore -> minRank xs (card,score)
+    | score == currScore && (currCard == Sashimi || currCard == Tofu) -> maxRank xs (card,score)
     | otherwise -> minRank xs (currCard,currScore)
 
+-- | Find the rank of a given card from a list of weighted picks
+findRank :: Card -> [(Card,Int)] -> Int
+findRank x list = case list of
+  [] -> 0
+  (card,score):xs
+    | card == x -> score
+    | otherwise -> findRank x xs
+
 -- | Generate greedy ranks for possible picks from a GameState
-greedyRank :: GameState -> [(Card,Int)]
+greedyRank :: GameState -> [(Card,Double)]
 greedyRank (GameState s p1h p1c p2h p2c) = case s of
-  Turn Player1 -> zip p1h (map scoreCards (map (++p1c) (map listify p1h)))
-  _ -> zip p2h (map scoreCards (map (++p2c) (map listify p2h)))
+  Turn Player1 -> zip p1h (map (fromIntegral . scoreCards) (map (++p1c) (map listify p1h)))
+  _ -> zip p2h (map (fromIntegral . scoreCards) (map (++p2c) (map listify p2h)))
   where
     listify :: a -> [a]
     listify x = [x]
 
--- | Generate (unpruned) heuristic ranks from a tree of GameStates based on score difference
-scoreDiffHeuristicRank :: GameState -> Int -> [(Card,Int)]
-scoreDiffHeuristicRank gs@(GameState s p1h _ p2h _) lookahead = case s of
+-- | Generate (unpruned) ranks from a tree of GameStates based on score difference
+scoreDiffRank :: GameState -> Int -> [(Card,Double)]
+scoreDiffRank gs@(GameState s p1h _ p2h _) lookahead = case s of
   Turn Player1 -> zip p1h (map (`scoreDiffValue` lookahead) (gsMoves gs))
   _ -> zip p2h (map (`scoreDiffValue` lookahead) (gsMoves gs))
 
--- | Generate (alpha-beta pruned) heuristic ranks from a tree of GameStates based on score difference
-scoreDiffABHeuristicRank :: GameState -> Int -> [(Card,Int)]
-scoreDiffABHeuristicRank gs@(GameState s p1h _ p2h _) lookahead = case s of
-  Turn Player1 -> zip p1h (map (`scoreDiffABValue` lookahead) (gsMoves gs))
-  _ -> zip p2h (map (`scoreDiffABValue` lookahead) (gsMoves gs))
+-- | Generate (alpha-beta pruned) ranks from a tree of GameStates based on score difference
+scoreDiffABRank :: GameState -> Int -> [(Card,Double)]
+scoreDiffABRank gs@(GameState s p1h _ p2h _) lookahead = case s of
+  Turn Player1 -> zip (removeDuplicates p1h) (map (`scoreDiffABValue` lookahead) (gsMoves gs))
+  _ -> zip (removeDuplicates p2h) (map (`scoreDiffABValue` lookahead) (gsMoves gs))
+
+scoreDiffTrimmedRank :: GameState -> Int -> [(Card,Double)]
+scoreDiffTrimmedRank gs@(GameState s p1h _ p2h _) lookahead = case s of
+  Turn Player1 -> zip (trimMoves (removeDuplicates p1h) gs) (map (`scoreDiffTrimmedValue` lookahead) (gsMovesTrimmed gs))
+  _ -> zip (trimMoves (removeDuplicates p2h) gs) (map (`scoreDiffTrimmedValue` lookahead) (gsMovesTrimmed gs))
+
+cleverTrimmedRank :: GameState -> Int -> [(Card,Double)]
+cleverTrimmedRank gs@(GameState s p1h _ p2h _) lookahead = case s of
+  Turn Player1 -> zip (trimMoves (removeDuplicates p1h) gs) (map (`scoreCleverTrimmedValue` lookahead) (gsMovesTrimmed gs))
+  _ -> zip (trimMoves (removeDuplicates p2h) gs) (map (`scoreCleverTrimmedValue` lookahead) (gsMovesTrimmed gs))
 
 {-
  Functions to help calculate ranks.
 -}
 
 -- | Finds the resulting possible GameStates of a pick from a given GameState
+gsMovesTrimmed :: GameState -> [GameState]
+gsMovesTrimmed gameState@(GameState s p1h _ p2h _) = case s of
+  Turn Player1 -> map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p1h) gameState))
+  Turn Player2 -> map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p2h) gameState))
+  _ -> [gameState]
+
 gsMoves :: GameState -> [GameState]
 gsMoves gameState@(GameState s p1h _ p2h _) = case s of
-  Turn Player1 -> map (`playMove` gameState) (map TakeCard p1h)
-  Turn Player2 -> map (`playMove` gameState) (map TakeCard p2h)
+  Turn Player1 -> map (`playMove` gameState) (map TakeCard (removeDuplicates p1h))
+  Turn Player2 -> map (`playMove` gameState) (map TakeCard (removeDuplicates p2h))
   _ -> [gameState]
+
+trimMoves :: [Card] -> GameState -> [Card]
+trimMoves possibleMoves gameState = case gameStatus gameState of
+  Turn player
+    | findRank Sashimi playerHand == 1 &&
+      findRank Sashimi enemyHand < 1 &&
+      (findRank Sashimi enemyCards + 1 `mod` 3 == 0 ||
+      findRank Sashimi playerCards + 1 `mod` 3 == 0) -> [Sashimi]
+    | findRank (Nigiri 3) playerHand > 0 &&
+      (findRank (Wasabi Nothing) enemyCards > 0 ||
+      findRank (Wasabi Nothing) playerCards > 0) -> [(Nigiri 3)]
+    | otherwise -> trimWorstMoves possibleMoves (length possibleMoves)
+      where
+        playerHand = counts (handFor player gameState)
+        playerCards = counts (cardsFor player gameState)
+        enemyHand = counts (handFor (otherPlayer player) gameState)
+        enemyCards = counts (cardsFor (otherPlayer player) gameState)
+        obtainableCards = counts ((handFor (otherPlayer player) gameState) ++ (handFor player gameState))
+
+        trimWorstMoves :: [Card] -> Int -> [Card]
+        trimWorstMoves moves optionSize
+          | optionSize > 1 = case moves of
+            [] -> []
+            Tofu:xs
+              | findRank Tofu obtainableCards > 3 ||
+                findRank Tofu playerCards == 2 -> trimWorstMoves xs (optionSize - 1)
+              | otherwise -> Tofu : trimWorstMoves xs optionSize
+            Eel:xs
+              | findRank Eel obtainableCards > 3 -> trimWorstMoves xs (optionSize - 1)
+              | otherwise -> Eel : trimWorstMoves xs optionSize
+            (Nigiri 1):xs
+              | findRank (Nigiri 2) playerHand > 0 || playerHandNigiri3 > 0 || (playerHandDumplings > 0 && playerCardsDumplings < 5) -> trimWorstMoves xs (optionSize - 1)
+              | otherwise -> (Nigiri 1) : trimWorstMoves xs optionSize
+            (Nigiri 2):xs
+              | playerHandNigiri3 > 0 || (playerHandDumplings > 0 && playerCardsDumplings < 5 &&  playerCardsDumplings > 0) -> trimWorstMoves xs (optionSize - 1)
+              | otherwise -> (Nigiri 2) : trimWorstMoves xs optionSize
+            (Nigiri 3):xs
+              | playerHandDumplings > 0 && playerCardsDumplings < 5 && playerCardsDumplings > 1 -> trimWorstMoves xs (optionSize - 1)
+              | otherwise -> (Nigiri 3) : trimWorstMoves xs optionSize
+            x:xs -> x : trimWorstMoves xs optionSize
+          | otherwise = moves
+            where
+              playerHandNigiri3 = findRank (Nigiri 3) playerHand
+              playerHandDumplings = findRank Dumplings playerHand
+              playerCardsDumplings = findRank Dumplings playerCards
+  _ -> []
+
+count :: Eq a => a -> [a] -> Int
+count x list = case list of
+  [] -> 0
+  xs -> length (filter (== x) xs)
+
+removeDuplicates :: Eq a => [a] -> [a]
+removeDuplicates list = case list of
+  [] -> []
+  (x:xs) -> x : removeDuplicates (filter (/=x) xs)
 
 -- | Build a full tree of possible GameStates
 buildGSTreeFull :: GameState -> GSTree GameState
@@ -218,44 +333,146 @@ buildGSTree gameState lookahead = buildGSTreeHelper 0 lookahead gameState
       | otherwise =
         GSTree gs []
 
--- | Score difference for heuristics
-scoreDiff :: GameState -> Int
-scoreDiff (GameState _ _ p1c _ p2c) = scoreCards p1c - scoreCards p2c
+-- | Build a partial tree of possible GameStates with a depth of lookahead
+buildTrimmedGSTree :: GameState -> Int -> GSTree GameState
+buildTrimmedGSTree gameState lookahead = buildTrimmedGSTreeHelper 0 lookahead gameState
+  where
+    buildTrimmedGSTreeHelper :: Int -> Int -> GameState -> GSTree GameState
+    buildTrimmedGSTreeHelper currDepth maxDepth gs
+      | currDepth < maxDepth && gameStatus gs /= Finished =
+        GSTree gs (map (buildTrimmedGSTreeHelper (currDepth + 1) maxDepth) (gsMovesTrimmed gs))
+        -- build until max depth or Finished GameStatus is reached
+      | otherwise =
+        GSTree gs []
 
--- | Assign a value to a given GameState based on score difference
+-- | Score difference for heuristics
+scoreDiffHeuristic :: GameState -> Double
+scoreDiffHeuristic (GameState _ _ p1c _ p2c) = fromIntegral (scoreCards p1c - scoreCards p2c)
+
+scoreCleverHeuristic :: GameState -> Double
+scoreCleverHeuristic gs@(GameState _ _ p1c _ p2c) = scorePotentialCards p1c gs - scorePotentialCards p2c gs
+
+-- | Scores a list of cards with a potential value added
+scorePotentialCards:: [Card] -> GameState -> Double
+scorePotentialCards cards gs = case gameStatus gs of
+  Turn player -> sum
+    [ scoreSingleCards
+    , scoreDumplings (countHelper Dumplings)
+    , scoreEel (countHelper Eel)
+    , scoreTofu (countHelper Tofu)
+    , scoreSashimi (countHelper Sashimi)
+    ]
+      where
+        scoreSingleCards = sum (flip map cards
+          (\card -> case card of
+              Nigiri n -> fromIntegral n
+              Wasabi Nothing
+                | findRank (Nigiri 3) obtainableCards > 1 -> 4.5
+                | findRank (Nigiri 2) obtainableCards > 1 -> 3
+                | findRank (Nigiri 1) obtainableCards > 1 -> 1.5
+                | otherwise -> 0
+              Wasabi (Just (Nigiri n)) -> fromIntegral (n * 3)
+              -- Technically redundant, but we spell it out so every card
+              -- type is named in the scoring function.
+              Chopsticks -> 0
+              _ -> 0))
+
+
+        -- scoreDumplings accounts for any additional Dumplings in the GameState which may still be obtainable
+        scoreDumplings n
+          | n == 0 = 0
+          | n == 1 && obtainableDumplings == 2 = 1.5
+          | n == 1 && obtainableDumplings == 3 = 2
+          | n == 1 && obtainableDumplings == 4 = 2.5
+          | n == 1 && obtainableDumplings > 4 = 3
+          | n == 1 = 1
+          | n == 2 && obtainableDumplings == 2 = 4.5
+          | n == 2 && obtainableDumplings == 3 = 5.3
+          | n == 2 && obtainableDumplings > 3 = 6
+          | n == 2 = 3
+          | n == 3 && obtainableDumplings == 2 = 8
+          | n == 3 && obtainableDumplings > 2 = 9
+          | n == 3 = 6
+          | n == 4 && obtainableDumplings > 1 = 12.5
+          | n == 4 = 10
+          | n >= 5 = 15
+          | otherwise = error "scoreDumplings: negative Dumpling count?"
+            where
+              obtainableDumplings = findRank Dumplings obtainableCards
+
+        scoreEel n
+          | n == 0 = 0
+          | n == 1 && findRank Eel obtainableCards > 1 = 3.5 -- potential to be worth 3.5 points
+          | n == 1 = -3
+          | n >= 2 = 7
+          | otherwise = error "scoreEel: negative Eel count?"
+
+        scoreTofu n
+          | n == 0 = 0
+          | n == 1 && obtainableTofu > 1 = 3 -- potential to be worth 3 points when obtaining a second Tofu
+          | n == 1 = 2
+          | n == 2 && obtainableTofu > 0 = 3 -- avoid risk of getting > 3 Tofu
+          | n == 2 = 6
+          | n >= 3 = 0
+          | otherwise = error "scoreTofu: negative Tofu count?"
+            where
+              obtainableTofu = findRank Tofu obtainableCards
+
+        scoreSashimi n
+          | findRank Sashimi obtainableCards > 3 = 3.3 -- potential to be worth 3.3 points each
+          | otherwise = fromIntegral (n `div` 3 * 10)
+
+        countHelper card = length (filter (== card) cards)
+
+        obtainableCards = counts ((handFor (otherPlayer player) gs) ++ (handFor player gs))
+
+  _ -> fromIntegral (scoreCards cards)
+
+-- | Assign a value to a given GameState based on score difference and a lookahead
 -- where max is Player1 and min is Player2
-scoreDiffValue :: GameState -> Int -> Int
+scoreDiffValue :: GameState -> Int -> Double
 scoreDiffValue gameState lookahead = scoreDiffGSValueHelper (buildGSTree gameState lookahead)
   where
-    scoreDiffGSValueHelper :: GSTree GameState -> Int
+    scoreDiffGSValueHelper :: GSTree GameState -> Double
     scoreDiffGSValueHelper gsTree = case gsTree of
-      GSTree gs [] -> scoreDiff gs
+      GSTree gs [] -> scoreDiffHeuristic gs
       GSTree gs list -> case gameStatus gs of
           Turn Player1 -> maximum (map scoreDiffGSValueHelper list)
           Turn Player2 -> minimum (map scoreDiffGSValueHelper list)
           _ -> error "scoreDiffValue: game finished"
 
--- | Assign a value to a given GameState based on score difference with alpha-beta pruning
+-- | Assign a value to a given GameState based on score difference and a lookahead with alpha-beta pruning
 -- where max is Player1 and min is Player2
-scoreDiffABValue :: GameState -> Int -> Int
-scoreDiffABValue gameState lookahead = scoreDiffABValueHelper (-10000) 10000 (buildGSTree gameState lookahead)
-  where
-    scoreDiffABValueHelper :: Int -> Int -> GSTree GameState -> Int
-    scoreDiffABValueHelper alpha beta gsTree = case gsTree of
-      GSTree gs [] -> scoreDiff gs
-      GSTree gs list@(x:_) -> case gameStatus gs of
-        Turn Player1 -> maxSearch (scoreDiffABValueHelper alpha beta x) list alpha beta
-        Turn Player2 -> minSearch (scoreDiffABValueHelper alpha beta x) list alpha beta
-        _ -> error "scoreDiffValue: game finished"
+scoreDiffABValue :: GameState -> Int -> Double
+scoreDiffABValue gameState lookahead = alphaBetaTreeValue (-10000) 10000 scoreDiffHeuristic (buildGSTree gameState lookahead)
 
-    -- prune beta
-    maxSearch :: Int -> [GSTree GameState] -> Int -> Int -> Int
-    maxSearch value list a b
-      | maximum [a,value] >= b = maximum [a,value]
-      | otherwise = (maximum (map (scoreDiffABValueHelper (maximum [a,value]) b) list))
+scoreDiffTrimmedValue :: GameState -> Int -> Double
+scoreDiffTrimmedValue gameState lookahead = alphaBetaTreeValue (-10000) 10000 scoreDiffHeuristic (buildTrimmedGSTree gameState lookahead)
 
-    -- prune alpha
-    minSearch :: Int -> [GSTree GameState] -> Int -> Int -> Int
-    minSearch value list a b
-      | a >= minimum [b,value] = minimum [b,value]
-      | otherwise = (minimum (map (scoreDiffABValueHelper a (minimum [b,value])) list))
+scoreCleverTrimmedValue :: GameState -> Int -> Double
+scoreCleverTrimmedValue gameState lookahead = alphaBetaTreeValue (-10000) 10000 scoreCleverHeuristic (buildTrimmedGSTree gameState lookahead)
+
+alphaBetaTreeValue :: Double -> Double -> (GameState -> Double) -> GSTree GameState -> Double
+alphaBetaTreeValue alpha beta heuristic gsTree = case gsTree of
+  GSTree gs [] -> heuristic gs
+  GSTree gs list@(x:_) -> case gameStatus gs of
+    Turn Player1 -> maxSearch (alphaBetaTreeValue alpha beta heuristic x) list alpha beta
+    Turn Player2 -> minSearch (alphaBetaTreeValue alpha beta heuristic x) list alpha beta
+    _ -> error "scoreDiffValue: game finished"
+
+    where
+        -- prune beta
+        maxSearch :: Double -> [GSTree GameState] -> Double -> Double -> Double
+        maxSearch value gsList a b
+          | maxA >= b = maxA
+          | otherwise = (maximum (map (alphaBetaTreeValue maxA b heuristic) gsList))
+          where
+            maxA = maximum [a,value]
+
+        -- prune alpha
+        minSearch :: Double -> [GSTree GameState] -> Double -> Double -> Double
+        minSearch value gsList a b
+          | a >= minB = minB
+          | otherwise = (minimum (map (alphaBetaTreeValue a minB heuristic) gsList))
+          where
+            minB = minimum [b,value]
