@@ -1,3 +1,9 @@
+{-|
+Module      : test\AllTests.hs
+Description : Defines a set of tests for AI.hs functions.
+Maintainer  : u6947396@anu.edu.au
+-}
+
 module Main where
 
 import SushiGoTests
