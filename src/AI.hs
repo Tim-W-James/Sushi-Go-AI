@@ -36,80 +36,6 @@ instance Show a => Show (GSTree a) where
           indent :: [String] -> [String]
           indent = map ("  "++)
 
-{-
- Useful GameStates for testing ranking and AI.
--}
-
--- first turn GameStates
-initialState1 :: GameState
-initialState1 =
-  initialGame [(Nigiri 1),(Nigiri 1),(Wasabi Nothing),Dumplings,Eel,Tofu,Sashimi]
-  [(Nigiri 2),(Nigiri 2),(Wasabi Nothing),Dumplings,Eel,Tofu,Sashimi]
-
-initialState2 :: GameState
-initialState2 =
-  initialGame [(Nigiri 1),Dumplings,Tofu] [(Nigiri 2),Eel,Sashimi]
-
-initialState3 :: GameState
-initialState3 =
-  initialGame [(Nigiri 1),Dumplings] [(Nigiri 2),Eel]
-
-initialState4 :: GameState
-initialState4 =
-  initialGame [Dumplings] [Eel]
-
-initialState5 :: GameState
-initialState5 =
-  initialGame [(Nigiri 1),(Nigiri 1),(Nigiri 2),(Nigiri 3),(Wasabi Nothing),(Wasabi Nothing)
-  ,Dumplings,Dumplings,Eel,Eel,Tofu,Tofu,Tofu,Sashimi,Sashimi] [(Nigiri 1),(Nigiri 2),(Nigiri 2),(Nigiri 3),
-  (Wasabi Nothing),(Wasabi Nothing),Dumplings,Dumplings,Eel,Eel,Eel,Tofu,Tofu,Sashimi,Sashimi]
-
-cards1 :: [Card]
-cards1 =
-  [(Nigiri 1),(Nigiri 1),(Nigiri 2),(Nigiri 3),(Wasabi Nothing),(Wasabi Nothing),Dumplings,Dumplings,Eel,Eel,
-  Tofu,Tofu,Tofu,Sashimi,Sashimi]
-
--- GameStates that are partially complete
-midState1 :: GameState
-midState1 =
-  GameState (Turn Player1) [(Nigiri 1),(Nigiri 1),(Wasabi Nothing),(Wasabi Nothing),
-  Dumplings,Dumplings,Eel,Eel,Tofu,Tofu,Sashimi,Sashimi] [(Nigiri 3),Eel,Sashimi,Sashimi]
-  [(Nigiri 2),(Nigiri 2),(Wasabi Nothing),(Wasabi Nothing),Dumplings,Dumplings,Eel,Eel,Tofu,
-  Tofu,Sashimi,Sashimi] [(Nigiri 3),Eel,Eel,Sashimi]
-
-midState2 :: GameState
-midState2 =
-  GameState (Turn Player2) [(Nigiri 1),Sashimi] [Sashimi,Sashimi] [(Nigiri 2),(Nigiri 2),Eel] [Eel]
-
-midState3 :: GameState
-midState3 =
-  GameState (Turn Player1) [(Nigiri 2)] [] [(Nigiri 1)] []
-
-midState4 :: GameState
-midState4 =
-  GameState (Turn Player1) [Eel,Eel] [] [Sashimi,Sashimi] []
-
-midState5 :: GameState
-midState5 =
-  GameState (Turn Player1) [(Nigiri 1),(Nigiri 3),(Wasabi Nothing),Sashimi,Sashimi,Tofu] [(Nigiri 1),Sashimi] [(Nigiri 2),(Nigiri 2),(Wasabi Nothing),Tofu,Tofu,Eel] [Eel,Eel]
-
-midState6 :: GameState
-midState6 =
-  GameState (Turn Player1) [Sashimi,(Nigiri 1),(Nigiri 1),Dumplings,Dumplings,Eel,Eel,Eel,Eel,Eel,Tofu,Tofu,Tofu] [(Nigiri 2),(Nigiri 3)] [(Nigiri 1),(Nigiri 2),(Nigiri 2),(Nigiri 2),Eel,Eel,Eel,Eel,Eel,Tofu,Tofu,Tofu,Tofu] [(Nigiri 2),(Nigiri 3)]
-
--- GameStates that are finished
-finishedState1 :: GameState
-finishedState1 =
-  GameState Finished [] [Sashimi,Sashimi,Sashimi] [] [Eel,Eel,Eel]
-
-finishedState2 :: GameState
-finishedState2 =
-  GameState Finished [] [Eel,Eel,Eel] [] [Sashimi,Sashimi,Sashimi]
-
-finishedState3 :: GameState
-finishedState3 =
-  GameState Finished [] [(Nigiri 1)] [] [(Nigiri 1)]
-
 -- | The table of all AIs you have implemented. We will mark the AI
 -- called "default" as your submission, but you may include other AIs
 -- for testing.
@@ -134,7 +60,8 @@ ais =
  however it drastically speeds up calculation times.
 -}
 
--- | Strategically trims a list of gameStates, taking optimal moves and discarding poor decisions
+-- | Strategically trims a list of gameStates,
+-- taking optimal moves and discarding poor decisions
 trimMoves :: [Card] -> GameState -> [Card]
 trimMoves possibleMoves gameState = case gameStatus gameState of
   Turn player -- moves the AI should always take
@@ -152,7 +79,9 @@ trimMoves possibleMoves gameState = case gameStatus gameState of
         playerCards = counts (cardsFor player gameState)
         enemyHand = counts (handFor (otherPlayer player) gameState)
         enemyCards = counts (cardsFor (otherPlayer player) gameState)
-        obtainableCards = counts ((handFor (otherPlayer player) gameState) ++ (handFor player gameState))
+        obtainableCards =
+          counts ((handFor (otherPlayer player) gameState)
+          ++ (handFor player gameState))
 
         -- moves that should be avoided unless necessary
         trimWorstMoves :: [Card] -> Int -> [Card]
@@ -167,13 +96,21 @@ trimMoves possibleMoves gameState = case gameStatus gameState of
               | findRank Eel obtainableCards > 3 -> trimWorstMoves xs (optionSize - 1)
               | otherwise -> Eel : trimWorstMoves xs optionSize
             (Nigiri 1):xs
-              | findRank (Nigiri 2) playerHand > 0 || playerHandNigiri3 > 0 || (playerHandDumplings > 0 && playerCardsDumplings < 5) -> trimWorstMoves xs (optionSize - 1)
+              | findRank (Nigiri 2) playerHand > 0 ||
+                playerHandNigiri3 > 0 ||
+                (playerHandDumplings > 0 &&
+                playerCardsDumplings < 5) -> trimWorstMoves xs (optionSize - 1)
               | otherwise -> (Nigiri 1) : trimWorstMoves xs optionSize
             (Nigiri 2):xs
-              | playerHandNigiri3 > 0 || (playerHandDumplings > 0 && playerCardsDumplings < 5 &&  playerCardsDumplings > 0) -> trimWorstMoves xs (optionSize - 1)
+              | playerHandNigiri3 > 0 ||
+                (playerHandDumplings > 0 &&
+                playerCardsDumplings < 5 &&
+                playerCardsDumplings > 0) -> trimWorstMoves xs (optionSize - 1)
               | otherwise -> (Nigiri 2) : trimWorstMoves xs optionSize
             (Nigiri 3):xs
-              | playerHandDumplings > 0 && playerCardsDumplings < 5 && playerCardsDumplings > 1 -> trimWorstMoves xs (optionSize - 1)
+              | playerHandDumplings > 0 &&
+                playerCardsDumplings < 5 &&
+                playerCardsDumplings > 1 -> trimWorstMoves xs (optionSize - 1)
               | otherwise -> (Nigiri 3) : trimWorstMoves xs optionSize
             x:xs -> x : trimWorstMoves xs optionSize
           | otherwise = moves
@@ -189,11 +126,14 @@ removeDuplicates list = case list of
   [] -> []
   (x:xs) -> x : removeDuplicates (filter (/=x) xs)
 
--- | Finds the resulting possible GameStates of a pick from a given GameState, after being trimmed extensively
+-- | Finds the resulting possible GameStates of a pick from a given GameState,
+-- after being trimmed extensively
 gsMovesTrimmed :: GameState -> [GameState]
 gsMovesTrimmed gameState@(GameState s p1h _ p2h _) = case s of
-  Turn Player1 -> map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p1h) gameState))
-  Turn Player2 -> map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p2h) gameState))
+  Turn Player1 ->
+    map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p1h) gameState))
+  Turn Player2 ->
+    map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p2h) gameState))
   _ -> [gameState]
 
 {-
@@ -225,8 +165,8 @@ buildTrimmedGSTree gameState lookahead = buildTrimmedGSTreeHelper 0 lookahead ga
 scoreDiffHeuristic :: GameState -> Double
 scoreDiffHeuristic (GameState _ _ p1c _ p2c) = fromIntegral (scoreCards p1c - scoreCards p2c)
 
--- | Assign a value to a given GameState based on score difference and a lookahead, with alpha-beta pruning
--- where max is Player1 and min is Player2
+-- | Assign a value to a given GameState based on score difference and a lookahead,
+-- with alpha-beta pruning, where max is Player1 and min is Player2
 alphaBetaTreeValue :: Double -> Double -> (GameState -> Double) -> GSTree GameState -> Double
 alphaBetaTreeValue alpha beta heuristic gsTree = case gsTree of
   GSTree gs [] -> heuristic gs
@@ -252,10 +192,12 @@ alphaBetaTreeValue alpha beta heuristic gsTree = case gsTree of
           where
             minB = minimum [b,value]
 
--- | Assign a value to a given GameState based on score difference and a lookahead with extensive pruning
+-- | Assign a value to a given GameState based on score difference
+-- and a lookahead with extensive pruning.
 -- where max is Player1 and min is Player2
 scoreDiffTrimmedValue :: GameState -> Int -> Double
-scoreDiffTrimmedValue gameState lookahead = alphaBetaTreeValue (-10000) 10000 scoreDiffHeuristic (buildTrimmedGSTree gameState lookahead)
+scoreDiffTrimmedValue gameState lookahead =
+  alphaBetaTreeValue (-10000) 10000 scoreDiffHeuristic (buildTrimmedGSTree gameState lookahead)
 
 {-
  We zip a list of values with their associated pick,
@@ -546,3 +488,82 @@ potentialTrimmedMinimaxPick state lookahead = case gameStatus state of
     | length (handFor player state) < 6 -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
     | otherwise -> TakeCard (bestRank player (potentialTrimmedRank state lookahead))
   _ -> error "potentialTrimmedMinimaxPick: called on finished game"
+
+
+{-
+ Useful GameStates for testing ranking and AI.
+-}
+
+-- first turn GameStates
+initialState1 :: GameState
+initialState1 =
+  initialGame [(Nigiri 1),(Nigiri 1),(Wasabi Nothing),Dumplings,Eel,Tofu,Sashimi]
+  [(Nigiri 2),(Nigiri 2),(Wasabi Nothing),Dumplings,Eel,Tofu,Sashimi]
+
+initialState2 :: GameState
+initialState2 =
+  initialGame [(Nigiri 1),Dumplings,Tofu] [(Nigiri 2),Eel,Sashimi]
+
+initialState3 :: GameState
+initialState3 =
+  initialGame [(Nigiri 1),Dumplings] [(Nigiri 2),Eel]
+
+initialState4 :: GameState
+initialState4 =
+  initialGame [Dumplings] [Eel]
+
+initialState5 :: GameState
+initialState5 =
+  initialGame [(Nigiri 1),(Nigiri 1),(Nigiri 2),(Nigiri 3),(Wasabi Nothing),(Wasabi Nothing)
+  ,Dumplings,Dumplings,Eel,Eel,Tofu,Tofu,Tofu,Sashimi,Sashimi] [(Nigiri 1),(Nigiri 2),(Nigiri 2),(Nigiri 3),
+  (Wasabi Nothing),(Wasabi Nothing),Dumplings,Dumplings,Eel,Eel,Eel,Tofu,Tofu,Sashimi,Sashimi]
+
+cards1 :: [Card]
+cards1 =
+  [(Nigiri 1),(Nigiri 1),(Nigiri 2),(Nigiri 3),(Wasabi Nothing),(Wasabi Nothing)
+  ,Dumplings,Dumplings,Eel,Eel,Tofu,Tofu,Tofu,Sashimi,Sashimi]
+
+-- GameStates that are partially complete
+midState1 :: GameState
+midState1 =
+  GameState (Turn Player1) [(Nigiri 1),(Nigiri 1),(Wasabi Nothing),(Wasabi Nothing),
+  Dumplings,Dumplings,Eel,Eel,Tofu,Tofu,Sashimi,Sashimi] [(Nigiri 3),Eel,Sashimi,Sashimi]
+  [(Nigiri 2),(Nigiri 2),(Wasabi Nothing),(Wasabi Nothing),Dumplings,Dumplings,Eel,Eel,Tofu,
+  Tofu,Sashimi,Sashimi] [(Nigiri 3),Eel,Eel,Sashimi]
+
+midState2 :: GameState
+midState2 =
+  GameState (Turn Player2) [(Nigiri 1),Sashimi] [Sashimi,Sashimi] [(Nigiri 2),(Nigiri 2),Eel] [Eel]
+
+midState3 :: GameState
+midState3 =
+  GameState (Turn Player1) [(Nigiri 2)] [] [(Nigiri 1)] []
+
+midState4 :: GameState
+midState4 =
+  GameState (Turn Player1) [Eel,Eel] [] [Sashimi,Sashimi] []
+
+midState5 :: GameState
+midState5 =
+  GameState (Turn Player1) [(Nigiri 1),(Nigiri 3),(Wasabi Nothing),Sashimi,Sashimi,Tofu]
+  [(Nigiri 1),Sashimi] [(Nigiri 2),(Nigiri 2),(Wasabi Nothing),Tofu,Tofu,Eel] [Eel,Eel]
+
+midState6 :: GameState
+midState6 =
+  GameState (Turn Player1) [Sashimi,(Nigiri 1),(Nigiri 1),Dumplings,Dumplings,
+  Eel,Eel,Eel,Eel,Eel,Tofu,Tofu,Tofu] [(Nigiri 2),(Nigiri 3)]
+  [(Nigiri 1),(Nigiri 2),(Nigiri 2),(Nigiri 2),Eel,Eel,Eel,Eel,Eel,Tofu,Tofu,
+  Tofu,Tofu] [(Nigiri 2),(Nigiri 3)]
+
+-- GameStates that are finished
+finishedState1 :: GameState
+finishedState1 =
+  GameState Finished [] [Sashimi,Sashimi,Sashimi] [] [Eel,Eel,Eel]
+
+finishedState2 :: GameState
+finishedState2 =
+  GameState Finished [] [Eel,Eel,Eel] [] [Sashimi,Sashimi,Sashimi]
+
+finishedState3 :: GameState
+finishedState3 =
+  GameState Finished [] [(Nigiri 1)] [] [(Nigiri 1)]
