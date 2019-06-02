@@ -120,148 +120,24 @@ ais =
   ("partialMinimax",partialMinimaxPick),
   ("minimax",minimaxPick),
   ("alphaBetaMinimax",alphaBetaMinimaxPick),
-  ("trimmedMinimax",trimmedMinimaxPick),
-  ("default",cleverTrimmedMinimaxPick)]
+  ("default",trimmedMinimaxPick),
+  ("potentialTrimmedMinimax",potentialTrimmedMinimaxPick)]
+
+{-=================================
+ Functions used for the default AI.
+=================================-}
 
 {-
- AIs.
+ First we need to decide which moves to consider.
+ I call this trimming, and it takes place before alpha-beta pruning.
+ Information may be lost in this process,
+ however it drastically speeds up calculation times.
 -}
 
--- Equivalently: firstLegal :: GameState -> Int -> Move
--- firstLegal simply takes the first card it sees
-firstPick :: AIFunc
-firstPick state _ = case gameStatus state of
-  Turn player -> TakeCard (head (handFor player state))
-  _ -> error "firstPick: called on finished game"
-
--- greedy AI that picks the card with the greatest immediate increase in score
-greedyPick :: AIFunc
-greedyPick state _ = case gameStatus state of
-  Turn _ -> TakeCard (maxRank (greedyRank state) (head (greedyRank state)))
-  _ -> error "greedyPick: called on finished game"
-
--- minimax AI (not pruned) limited to a lookahead of 3
-partialMinimaxPick :: AIFunc
-partialMinimaxPick state _ = case gameStatus state of
-  Turn player -> TakeCard (bestRank player (scoreDiffRank state 3))
-  _ -> error "partialMinimaxPick: called on finished game"
-
--- minimax AI (not pruned) with highest lookahead possible
-minimaxPick :: AIFunc
-minimaxPick state lookahead = case gameStatus state of
-  Turn player -> TakeCard (bestRank player (scoreDiffRank state lookahead))
-  _ -> error "minimaxPick: called on finished game"
-
--- minimax AI (pruned) with highest lookahead possible
-alphaBetaMinimaxPick :: AIFunc
-alphaBetaMinimaxPick state lookahead = case gameStatus state of
-  Turn player -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
-  _ -> error "alphaBetaMinimaxPick: called on finished game"
-
-trimmedMinimaxPick :: AIFunc
-trimmedMinimaxPick state lookahead = case gameStatus state of
-  Turn player
-    | length (handFor player state) < 6 -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
-    | otherwise -> TakeCard (bestRank player (scoreDiffTrimmedRank state lookahead))
-  _ -> error "trimmedMinimaxPick: called on finished game"
-
-cleverTrimmedMinimaxPick :: AIFunc
-cleverTrimmedMinimaxPick state lookahead = case gameStatus state of
-  Turn player
-    | length (handFor player state) < 6 -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
-    | otherwise -> TakeCard (bestRank player (cleverTrimmedRank state lookahead))
-  _ -> error "cleverTrimmedMinimaxPick: called on finished game"
-
-{-
- Ranking functions which associate each pick with a value.
--}
-
--- | Find the best rank for the relevant player from a list of weighted picks
--- where max is Player1 and min is Player2
-bestRank :: Player -> [(Card,Double)] -> Card
-bestRank player handOptions = case handOptions of
-  x:xs
-    | player == Player1 -> maxRank xs x
-    | otherwise -> minRank xs x
-  _ -> error "greedyGreatest: hand is empty"
-
--- | Find max rank from a list of weighted picks
-maxRank :: [(Card,Double)] -> (Card,Double) -> Card
-maxRank options (currCard,currScore) = case options of
-  [] -> currCard
-  (card,score):xs
-    | score > currScore -> maxRank xs (card,score)
-    | score == currScore && (currCard == Sashimi || currCard == Tofu) -> maxRank xs (card,score)
-    | otherwise -> maxRank xs (currCard,currScore)
-
--- | Find min rank from a list of weighted picks
-minRank :: [(Card,Double)] -> (Card,Double) -> Card
-minRank options (currCard,currScore) = case options of
-  [] -> currCard
-  (card,score):xs
-    | score < currScore -> minRank xs (card,score)
-    | score == currScore && (currCard == Sashimi || currCard == Tofu) -> maxRank xs (card,score)
-    | otherwise -> minRank xs (currCard,currScore)
-
--- | Find the rank of a given card from a list of weighted picks
-findRank :: Card -> [(Card,Int)] -> Int
-findRank x list = case list of
-  [] -> 0
-  (card,score):xs
-    | card == x -> score
-    | otherwise -> findRank x xs
-
--- | Generate greedy ranks for possible picks from a GameState
-greedyRank :: GameState -> [(Card,Double)]
-greedyRank (GameState s p1h p1c p2h p2c) = case s of
-  Turn Player1 -> zip p1h (map (fromIntegral . scoreCards) (map (++p1c) (map listify p1h)))
-  _ -> zip p2h (map (fromIntegral . scoreCards) (map (++p2c) (map listify p2h)))
-  where
-    listify :: a -> [a]
-    listify x = [x]
-
--- | Generate (unpruned) ranks from a tree of GameStates based on score difference
-scoreDiffRank :: GameState -> Int -> [(Card,Double)]
-scoreDiffRank gs@(GameState s p1h _ p2h _) lookahead = case s of
-  Turn Player1 -> zip p1h (map (`scoreDiffValue` lookahead) (gsMoves gs))
-  _ -> zip p2h (map (`scoreDiffValue` lookahead) (gsMoves gs))
-
--- | Generate (alpha-beta pruned) ranks from a tree of GameStates based on score difference
-scoreDiffABRank :: GameState -> Int -> [(Card,Double)]
-scoreDiffABRank gs@(GameState s p1h _ p2h _) lookahead = case s of
-  Turn Player1 -> zip (removeDuplicates p1h) (map (`scoreDiffABValue` lookahead) (gsMoves gs))
-  _ -> zip (removeDuplicates p2h) (map (`scoreDiffABValue` lookahead) (gsMoves gs))
-
-scoreDiffTrimmedRank :: GameState -> Int -> [(Card,Double)]
-scoreDiffTrimmedRank gs@(GameState s p1h _ p2h _) lookahead = case s of
-  Turn Player1 -> zip (trimMoves (removeDuplicates p1h) gs) (map (`scoreDiffTrimmedValue` lookahead) (gsMovesTrimmed gs))
-  _ -> zip (trimMoves (removeDuplicates p2h) gs) (map (`scoreDiffTrimmedValue` lookahead) (gsMovesTrimmed gs))
-
-cleverTrimmedRank :: GameState -> Int -> [(Card,Double)]
-cleverTrimmedRank gs@(GameState s p1h _ p2h _) lookahead = case s of
-  Turn Player1 -> zip (trimMoves (removeDuplicates p1h) gs) (map (`scoreCleverTrimmedValue` lookahead) (gsMovesTrimmed gs))
-  _ -> zip (trimMoves (removeDuplicates p2h) gs) (map (`scoreCleverTrimmedValue` lookahead) (gsMovesTrimmed gs))
-
-{-
- Functions to help calculate ranks.
--}
-
--- | Finds the resulting possible GameStates of a pick from a given GameState
-gsMovesTrimmed :: GameState -> [GameState]
-gsMovesTrimmed gameState@(GameState s p1h _ p2h _) = case s of
-  Turn Player1 -> map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p1h) gameState))
-  Turn Player2 -> map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p2h) gameState))
-  _ -> [gameState]
-
-gsMoves :: GameState -> [GameState]
-gsMoves gameState@(GameState s p1h _ p2h _) = case s of
-  Turn Player1 -> map (`playMove` gameState) (map TakeCard (removeDuplicates p1h))
-  Turn Player2 -> map (`playMove` gameState) (map TakeCard (removeDuplicates p2h))
-  _ -> [gameState]
-
+-- | Strategically trims a list of gameStates, taking optimal moves and discarding poor decisions
 trimMoves :: [Card] -> GameState -> [Card]
 trimMoves possibleMoves gameState = case gameStatus gameState of
-  Turn player
+  Turn player -- moves the AI should always take
     | findRank Sashimi playerHand == 1 &&
       findRank Sashimi enemyHand < 1 &&
       (findRank Sashimi enemyCards + 1 `mod` 3 == 0 ||
@@ -271,12 +147,14 @@ trimMoves possibleMoves gameState = case gameStatus gameState of
       findRank (Wasabi Nothing) playerCards > 0) -> [(Nigiri 3)]
     | otherwise -> trimWorstMoves possibleMoves (length possibleMoves)
       where
+        -- functions to get useful information from a gameState
         playerHand = counts (handFor player gameState)
         playerCards = counts (cardsFor player gameState)
         enemyHand = counts (handFor (otherPlayer player) gameState)
         enemyCards = counts (cardsFor (otherPlayer player) gameState)
         obtainableCards = counts ((handFor (otherPlayer player) gameState) ++ (handFor player gameState))
 
+        -- moves that should be avoided unless necessary
         trimWorstMoves :: [Card] -> Int -> [Card]
         trimWorstMoves moves optionSize
           | optionSize > 1 = case moves of
@@ -305,15 +183,197 @@ trimMoves possibleMoves gameState = case gameStatus gameState of
               playerCardsDumplings = findRank Dumplings playerCards
   _ -> []
 
-count :: Eq a => a -> [a] -> Int
-count x list = case list of
-  [] -> 0
-  xs -> length (filter (== x) xs)
-
+-- | Remove any duplicates from a list
 removeDuplicates :: Eq a => [a] -> [a]
 removeDuplicates list = case list of
   [] -> []
   (x:xs) -> x : removeDuplicates (filter (/=x) xs)
+
+-- | Finds the resulting possible GameStates of a pick from a given GameState, after being trimmed extensively
+gsMovesTrimmed :: GameState -> [GameState]
+gsMovesTrimmed gameState@(GameState s p1h _ p2h _) = case s of
+  Turn Player1 -> map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p1h) gameState))
+  Turn Player2 -> map (`playMove` gameState) (map TakeCard (trimMoves (removeDuplicates p2h) gameState))
+  _ -> [gameState]
+
+{-
+ With a list of possible moves we need to consider,
+ we can then generate a game tree of these moves.
+-}
+
+-- | Build a partial tree of possible GameStates with a depth of lookahead
+buildTrimmedGSTree :: GameState -> Int -> GSTree GameState
+buildTrimmedGSTree gameState lookahead = buildTrimmedGSTreeHelper 0 lookahead gameState
+  where
+    buildTrimmedGSTreeHelper :: Int -> Int -> GameState -> GSTree GameState
+    buildTrimmedGSTreeHelper currDepth maxDepth gs
+      | currDepth < maxDepth && gameStatus gs /= Finished =
+        GSTree gs (map (buildTrimmedGSTreeHelper (currDepth + 1) maxDepth) (gsMovesTrimmed gs))
+        -- build until max depth or Finished GameStatus is reached
+      | otherwise =
+        GSTree gs []
+
+{-
+ We then begin assigning values to each node of the tree with a score difference heuristic,
+ and discard parts of the tree with alpha-beta pruning.
+ Using minimax, we find which choice is best for Player1 with the maximum value, and which is
+ best for Player2 with a minimum value.
+-}
+
+-- | Simple heuristic for a score difference
+-- where max is Player1 and min is Player2
+scoreDiffHeuristic :: GameState -> Double
+scoreDiffHeuristic (GameState _ _ p1c _ p2c) = fromIntegral (scoreCards p1c - scoreCards p2c)
+
+-- | Assign a value to a given GameState based on score difference and a lookahead, with alpha-beta pruning
+-- where max is Player1 and min is Player2
+alphaBetaTreeValue :: Double -> Double -> (GameState -> Double) -> GSTree GameState -> Double
+alphaBetaTreeValue alpha beta heuristic gsTree = case gsTree of
+  GSTree gs [] -> heuristic gs
+  GSTree gs list@(x:_) -> case gameStatus gs of
+    Turn Player1 -> maxSearch (alphaBetaTreeValue alpha beta heuristic x) list alpha beta
+    Turn Player2 -> minSearch (alphaBetaTreeValue alpha beta heuristic x) list alpha beta
+    _ -> error "scoreDiffValue: game finished"
+
+    where
+        -- prune beta
+        maxSearch :: Double -> [GSTree GameState] -> Double -> Double -> Double
+        maxSearch value gsList a b
+          | maxA >= b = maxA
+          | otherwise = (maximum (map (alphaBetaTreeValue maxA b heuristic) gsList))
+          where
+            maxA = maximum [a,value]
+
+        -- prune alpha
+        minSearch :: Double -> [GSTree GameState] -> Double -> Double -> Double
+        minSearch value gsList a b
+          | a >= minB = minB
+          | otherwise = (minimum (map (alphaBetaTreeValue a minB heuristic) gsList))
+          where
+            minB = minimum [b,value]
+
+-- | Assign a value to a given GameState based on score difference and a lookahead with extensive pruning
+-- where max is Player1 and min is Player2
+scoreDiffTrimmedValue :: GameState -> Int -> Double
+scoreDiffTrimmedValue gameState lookahead = alphaBetaTreeValue (-10000) 10000 scoreDiffHeuristic (buildTrimmedGSTree gameState lookahead)
+
+{-
+ We zip a list of values with their associated pick,
+ then figure out which choice is best depending on which player the AI is.
+-}
+
+-- | Generate (extensively pruned) ranks from a tree of GameStates based on score difference
+scoreDiffTrimmedRank :: GameState -> Int -> [(Card,Double)]
+scoreDiffTrimmedRank gs@(GameState s p1h _ p2h _) lookahead = case s of
+  Turn Player1 -> zip (trimMoves (removeDuplicates p1h) gs) (map (`scoreDiffTrimmedValue` lookahead) (gsMovesTrimmed gs))
+  _ -> zip (trimMoves (removeDuplicates p2h) gs) (map (`scoreDiffTrimmedValue` lookahead) (gsMovesTrimmed gs))
+
+-- | DEFAULT AI: minimax AI (extended pruning) with score difference heuristic
+-- If hand is smaller than 6 cards, there is enough time to reach
+-- the bottom of the game tree with alpha beta minimax.
+-- This is done because there is no need to risk information loss
+-- when perfect information can be achieved within the time limit.
+trimmedMinimaxPick :: AIFunc
+trimmedMinimaxPick state lookahead = case gameStatus state of
+  Turn player
+    | length (handFor player state) < 6 -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
+    | otherwise -> TakeCard (bestRank player (scoreDiffTrimmedRank state lookahead))
+  _ -> error "trimmedMinimaxPick: called on finished game"
+
+{-
+ Useful functions for dealing with tuples.
+-}
+
+-- | Find the best rank for the relevant player from a list of weighted picks
+-- where max is Player1 and min is Player2
+bestRank :: Player -> [(Card,Double)] -> Card
+bestRank player handOptions = case handOptions of
+  x:xs
+    | player == Player1 -> maxRank xs x
+    | otherwise -> minRank xs x
+  _ -> error "greedyGreatest: hand is empty"
+
+-- | Find max rank from a list of weighted picks
+maxRank :: [(Card,Double)] -> (Card,Double) -> Card
+maxRank options (currCard,currScore) = case options of
+  [] -> currCard
+  (card,score):xs
+    | score > currScore -> maxRank xs (card,score)
+    -- if equal, prefer some cards over others
+    | score == currScore && (currCard == Sashimi ||
+      currCard == Tofu) -> maxRank xs (card,score)
+    | otherwise -> maxRank xs (currCard,currScore)
+
+-- | Find min rank from a list of weighted picks
+minRank :: [(Card,Double)] -> (Card,Double) -> Card
+minRank options (currCard,currScore) = case options of
+  [] -> currCard
+  (card,score):xs
+    | score < currScore -> minRank xs (card,score)
+    -- if equal, prefer some cards over others
+    | score == currScore && (currCard == Sashimi ||
+      currCard == Tofu) -> maxRank xs (card,score)
+    | otherwise -> minRank xs (currCard,currScore)
+
+-- | Find the rank of a given card from a list of weighted picks
+findRank :: Card -> [(Card,Int)] -> Int
+findRank x list = case list of
+  [] -> 0
+  (card,score):xs
+    | card == x -> score
+    | otherwise -> findRank x xs
+
+{-====================================================
+ Functions used in other AIs, useful for benchmarking.
+ Note that alphaBetaMinimax AI is used in some
+ situations with the default AI.
+====================================================-}
+
+{-
+ Ranking functions which associate each pick with a value.
+-}
+
+-- | Generate greedy ranks for possible picks from a GameState
+greedyRank :: GameState -> [(Card,Double)]
+greedyRank (GameState s p1h p1c p2h p2c) = case s of
+  Turn Player1 -> zip p1h (map (fromIntegral . scoreCards) (map (++p1c) (map listify p1h)))
+  _ -> zip p2h (map (fromIntegral . scoreCards) (map (++p2c) (map listify p2h)))
+  where
+    listify :: a -> [a]
+    listify x = [x]
+
+-- | Generate (unpruned) ranks from a tree of GameStates based on score difference
+scoreDiffRank :: GameState -> Int -> [(Card,Double)]
+scoreDiffRank gs@(GameState s p1h _ p2h _) lookahead = case s of
+  Turn Player1 -> zip p1h (map (`scoreDiffValue` lookahead) (gsMoves gs))
+  _ -> zip p2h (map (`scoreDiffValue` lookahead) (gsMoves gs))
+
+-- | Generate (alpha-beta pruned) ranks from a tree of GameStates based on score difference
+scoreDiffABRank :: GameState -> Int -> [(Card,Double)]
+scoreDiffABRank gs@(GameState s p1h _ p2h _) lookahead = case s of
+  Turn Player1 -> zip (removeDuplicates p1h) (map (`scoreDiffABValue` lookahead) (gsMoves gs))
+  _ -> zip (removeDuplicates p2h) (map (`scoreDiffABValue` lookahead) (gsMoves gs))
+
+-- | Generate (extensively pruned) ranks from a tree of GameStates based on score potential
+potentialTrimmedRank :: GameState -> Int -> [(Card,Double)]
+potentialTrimmedRank gs@(GameState s p1h _ p2h _) lookahead = case s of
+  Turn Player1 ->
+    zip (trimMoves (removeDuplicates p1h) gs)
+    (map (`scorePotentialTrimmedValue` lookahead) (gsMovesTrimmed gs))
+  _ ->
+    zip (trimMoves (removeDuplicates p2h) gs)
+    (map (`scorePotentialTrimmedValue` lookahead) (gsMovesTrimmed gs))
+
+{-
+ Functions to help calculate ranks.
+-}
+
+-- | Finds the resulting possible GameStates of a pick from a given GameState
+gsMoves :: GameState -> [GameState]
+gsMoves gameState@(GameState s p1h _ p2h _) = case s of
+  Turn Player1 -> map (`playMove` gameState) (map TakeCard (removeDuplicates p1h))
+  Turn Player2 -> map (`playMove` gameState) (map TakeCard (removeDuplicates p2h))
+  _ -> [gameState]
 
 -- | Build a full tree of possible GameStates
 buildGSTreeFull :: GameState -> GSTree GameState
@@ -333,24 +393,11 @@ buildGSTree gameState lookahead = buildGSTreeHelper 0 lookahead gameState
       | otherwise =
         GSTree gs []
 
--- | Build a partial tree of possible GameStates with a depth of lookahead
-buildTrimmedGSTree :: GameState -> Int -> GSTree GameState
-buildTrimmedGSTree gameState lookahead = buildTrimmedGSTreeHelper 0 lookahead gameState
-  where
-    buildTrimmedGSTreeHelper :: Int -> Int -> GameState -> GSTree GameState
-    buildTrimmedGSTreeHelper currDepth maxDepth gs
-      | currDepth < maxDepth && gameStatus gs /= Finished =
-        GSTree gs (map (buildTrimmedGSTreeHelper (currDepth + 1) maxDepth) (gsMovesTrimmed gs))
-        -- build until max depth or Finished GameStatus is reached
-      | otherwise =
-        GSTree gs []
-
--- | Score difference for heuristics
-scoreDiffHeuristic :: GameState -> Double
-scoreDiffHeuristic (GameState _ _ p1c _ p2c) = fromIntegral (scoreCards p1c - scoreCards p2c)
-
-scoreCleverHeuristic :: GameState -> Double
-scoreCleverHeuristic gs@(GameState _ _ p1c _ p2c) = scorePotentialCards p1c gs - scorePotentialCards p2c gs
+-- | Heuristic for a potential score difference
+-- where max is Player1 and min is Player2
+scorePotentialHeuristic :: GameState -> Double
+scorePotentialHeuristic gs@(GameState _ _ p1c _ p2c) =
+  scorePotentialCards p1c gs - scorePotentialCards p2c gs
 
 -- | Scores a list of cards with a potential value added
 scorePotentialCards:: [Card] -> GameState -> Double
@@ -378,7 +425,8 @@ scorePotentialCards cards gs = case gameStatus gs of
               _ -> 0))
 
 
-        -- scoreDumplings accounts for any additional Dumplings in the GameState which may still be obtainable
+        -- scoreDumplings accounts for any additional Dumplings
+        -- in the GameState which may still be obtainable
         scoreDumplings n
           | n == 0 = 0
           | n == 1 && obtainableDumplings == 2 = 1.5
@@ -409,7 +457,7 @@ scorePotentialCards cards gs = case gameStatus gs of
 
         scoreTofu n
           | n == 0 = 0
-          | n == 1 && obtainableTofu > 1 = 3 -- potential to be worth 3 points when obtaining a second Tofu
+          | n == 1 && obtainableTofu > 1 = 3 -- potential to be worth 3 points
           | n == 1 = 2
           | n == 2 && obtainableTofu > 0 = 3 -- avoid risk of getting > 3 Tofu
           | n == 2 = 6
@@ -441,38 +489,60 @@ scoreDiffValue gameState lookahead = scoreDiffGSValueHelper (buildGSTree gameSta
           Turn Player2 -> minimum (map scoreDiffGSValueHelper list)
           _ -> error "scoreDiffValue: game finished"
 
--- | Assign a value to a given GameState based on score difference and a lookahead with alpha-beta pruning
+-- | Assign a value to a given GameState based on
+-- score difference and a lookahead with alpha-beta pruning
 -- where max is Player1 and min is Player2
 scoreDiffABValue :: GameState -> Int -> Double
-scoreDiffABValue gameState lookahead = alphaBetaTreeValue (-10000) 10000 scoreDiffHeuristic (buildGSTree gameState lookahead)
+scoreDiffABValue gameState lookahead =
+  alphaBetaTreeValue (-10000) 10000 scoreDiffHeuristic (buildGSTree gameState lookahead)
 
-scoreDiffTrimmedValue :: GameState -> Int -> Double
-scoreDiffTrimmedValue gameState lookahead = alphaBetaTreeValue (-10000) 10000 scoreDiffHeuristic (buildTrimmedGSTree gameState lookahead)
+-- | Assign a value to a given GameState based on score potential
+-- and a lookahead with extensive pruning
+-- where max is Player1 and min is Player2
+scorePotentialTrimmedValue :: GameState -> Int -> Double
+scorePotentialTrimmedValue gameState lookahead =
+  alphaBetaTreeValue (-10000) 10000 scorePotentialHeuristic (buildTrimmedGSTree gameState lookahead)
 
-scoreCleverTrimmedValue :: GameState -> Int -> Double
-scoreCleverTrimmedValue gameState lookahead = alphaBetaTreeValue (-10000) 10000 scoreCleverHeuristic (buildTrimmedGSTree gameState lookahead)
 
-alphaBetaTreeValue :: Double -> Double -> (GameState -> Double) -> GSTree GameState -> Double
-alphaBetaTreeValue alpha beta heuristic gsTree = case gsTree of
-  GSTree gs [] -> heuristic gs
-  GSTree gs list@(x:_) -> case gameStatus gs of
-    Turn Player1 -> maxSearch (alphaBetaTreeValue alpha beta heuristic x) list alpha beta
-    Turn Player2 -> minSearch (alphaBetaTreeValue alpha beta heuristic x) list alpha beta
-    _ -> error "scoreDiffValue: game finished"
+{-
+ AIs.
+-}
 
-    where
-        -- prune beta
-        maxSearch :: Double -> [GSTree GameState] -> Double -> Double -> Double
-        maxSearch value gsList a b
-          | maxA >= b = maxA
-          | otherwise = (maximum (map (alphaBetaTreeValue maxA b heuristic) gsList))
-          where
-            maxA = maximum [a,value]
+-- Equivalently: firstLegal :: GameState -> Int -> Move
+-- firstLegal simply takes the first card it sees
+firstPick :: AIFunc
+firstPick state _ = case gameStatus state of
+  Turn player -> TakeCard (head (handFor player state))
+  _ -> error "firstPick: called on finished game"
 
-        -- prune alpha
-        minSearch :: Double -> [GSTree GameState] -> Double -> Double -> Double
-        minSearch value gsList a b
-          | a >= minB = minB
-          | otherwise = (minimum (map (alphaBetaTreeValue a minB heuristic) gsList))
-          where
-            minB = minimum [b,value]
+-- greedy AI that picks the card with the greatest immediate increase in score
+greedyPick :: AIFunc
+greedyPick state _ = case gameStatus state of
+  Turn _ -> TakeCard (maxRank (greedyRank state) (head (greedyRank state)))
+  _ -> error "greedyPick: called on finished game"
+
+-- minimax AI (not pruned) limited to a lookahead of 3 with score difference heuristic
+partialMinimaxPick :: AIFunc
+partialMinimaxPick state _ = case gameStatus state of
+  Turn player -> TakeCard (bestRank player (scoreDiffRank state 3))
+  _ -> error "partialMinimaxPick: called on finished game"
+
+-- minimax AI (not pruned) with highest lookahead possible with score difference heuristic
+minimaxPick :: AIFunc
+minimaxPick state lookahead = case gameStatus state of
+  Turn player -> TakeCard (bestRank player (scoreDiffRank state lookahead))
+  _ -> error "minimaxPick: called on finished game"
+
+-- minimax AI (pruned) with highest lookahead possible with score difference heuristic
+alphaBetaMinimaxPick :: AIFunc
+alphaBetaMinimaxPick state lookahead = case gameStatus state of
+  Turn player -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
+  _ -> error "alphaBetaMinimaxPick: called on finished game"
+
+-- minimax AI (extended pruning) with highest lookahead possible with predictive heuristic
+potentialTrimmedMinimaxPick :: AIFunc
+potentialTrimmedMinimaxPick state lookahead = case gameStatus state of
+  Turn player
+    | length (handFor player state) < 6 -> TakeCard (bestRank player (scoreDiffABRank state lookahead))
+    | otherwise -> TakeCard (bestRank player (potentialTrimmedRank state lookahead))
+  _ -> error "potentialTrimmedMinimaxPick: called on finished game"
