@@ -22,6 +22,7 @@ type AIFunc
 
 -- | Rose tree for use with GameStates
 data GSTree a = GSTree a [GSTree a]
+  deriving Eq
 
 -- ^ Prints a clean, readable GSTree
 -- code taken from lecture material (7th May)
@@ -287,8 +288,8 @@ greedyRank (GameState s p1h p1c p2h p2c) = case s of
 -- | Generate (unpruned) ranks from a tree of GameStates based on score difference
 scoreDiffRank :: GameState -> Int -> [(Card,Double)]
 scoreDiffRank gs@(GameState s p1h _ p2h _) lookahead = case s of
-  Turn Player1 -> zip p1h (map (`scoreDiffValue` lookahead) (gsMoves gs))
-  _ -> zip p2h (map (`scoreDiffValue` lookahead) (gsMoves gs))
+  Turn Player1 -> zip (removeDuplicates p1h) (map (`scoreDiffValue` lookahead) (gsMoves gs))
+  _ -> zip (removeDuplicates p2h) (map (`scoreDiffValue` lookahead) (gsMoves gs))
 
 -- | Generate (alpha-beta pruned) ranks from a tree of GameStates based on score difference
 scoreDiffABRank :: GameState -> Int -> [(Card,Double)]
@@ -342,7 +343,7 @@ scorePotentialHeuristic gs@(GameState _ _ p1c _ p2c) =
   scorePotentialCards p1c gs - scorePotentialCards p2c gs
 
 -- | Scores a list of cards with a potential value added
-scorePotentialCards:: [Card] -> GameState -> Double
+scorePotentialCards :: [Card] -> GameState -> Double
 scorePotentialCards cards gs = case gameStatus gs of
   Turn player -> sum
     [ scoreSingleCards
@@ -445,7 +446,6 @@ scorePotentialTrimmedValue :: GameState -> Int -> Double
 scorePotentialTrimmedValue gameState lookahead =
   alphaBetaTreeValue (-10000) 10000 scorePotentialHeuristic (buildTrimmedGSTree gameState lookahead)
 
-
 {-
  AIs.
 -}
@@ -517,11 +517,6 @@ initialState5 =
   initialGame [(Nigiri 1),(Nigiri 1),(Nigiri 2),(Nigiri 3),(Wasabi Nothing),(Wasabi Nothing)
   ,Dumplings,Dumplings,Eel,Eel,Tofu,Tofu,Tofu,Sashimi,Sashimi] [(Nigiri 1),(Nigiri 2),(Nigiri 2),(Nigiri 3),
   (Wasabi Nothing),(Wasabi Nothing),Dumplings,Dumplings,Eel,Eel,Eel,Tofu,Tofu,Sashimi,Sashimi]
-
-cards1 :: [Card]
-cards1 =
-  [(Nigiri 1),(Nigiri 1),(Nigiri 2),(Nigiri 3),(Wasabi Nothing),(Wasabi Nothing)
-  ,Dumplings,Dumplings,Eel,Eel,Tofu,Tofu,Tofu,Sashimi,Sashimi]
 
 -- GameStates that are partially complete
 midState1 :: GameState
