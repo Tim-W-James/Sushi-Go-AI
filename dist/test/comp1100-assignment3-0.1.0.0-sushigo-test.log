@@ -1,0 +1,81 @@
+Test suite sushigo-test: RUNNING...
+allTests
+  SushiGo
+    playMove
+      PASS: pick one card
+      PASS: hands swap after player 2 picks
+      PASS: Nigiri attaches to Wasabi if available
+      PASS: game is finished if no cards are left
+      PASS: using Chopsticks returns them to the hand
+    scoreCards
+      Nigiri/Wasabi
+        PASS: is worth its value
+        PASS: is tripled when attached to Wasabi
+        PASS: unused Wasabi is worth 0
+      Dumplings
+        PASS: 1 is worth 1
+        PASS: 2 is worth 3
+        PASS: 3 is worth 6
+        PASS: 4 is worth 10
+        PASS: 5 is worth 15
+        PASS: 6 is worth 15
+        PASS: 7 is worth 15
+      Eel
+        PASS: 1 is worth -3
+        PASS: 2 is worth 7
+        PASS: 3 is worth 7
+      Tofu
+        PASS: 1 is worth 2
+        PASS: 2 is worth 6
+        PASS: 3 is worth 0
+        PASS: 4 is worth 0
+      Sashimi
+        PASS: 1 is worth 0
+        PASS: 2 is worth 0
+        PASS: 3 is worth 10
+        PASS: 4 is worth 10
+        PASS: 5 is worth 10
+        PASS: 6 is worth 20
+        PASS: 7 is worth 20
+        PASS: 8 is worth 20
+    counts
+      PASS: simple test
+  scoreDiffHeuristic
+    PASS: inital game
+    PASS: mid game
+    PASS: finished game
+  trimMoves
+    PASS: initial game
+    PASS: mid game
+    PASS: finished game
+  removeDuplicates
+    PASS: standard case
+    PASS: empty list
+  gsMovesTrimmed
+    PASS: initial game
+    PASS: mid game
+    PASS: finished game
+  buildTrimmedGSTree
+    PASS: initial game
+    PASS: mid game
+    PASS: finished game
+  alphaBetaTreeValue
+    PASS: initial game
+    PASS: mid game
+    PASS: finished game
+  scoreDiffTrimmedValue
+    PASS: initial game
+    PASS: mid game
+    PASS: finished game
+  scoreDiffTrimmedRank
+    PASS: initial game
+    PASS: mid game
+    PASS: finished game
+  bestRank
+    PASS: player 1
+    PASS: player 2
+  trimmedMinimaxPick
+    PASS: initial game
+    PASS: mid game
+Test suite sushigo-test: PASS
+Test suite logged to: dist\test\comp1100-assignment3-0.1.0.0-sushigo-test.log

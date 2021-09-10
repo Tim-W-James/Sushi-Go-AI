@@ -6,3 +6,5 @@
 .idea
 .cabal-sandbox
 cabal.sandbox.config
+gameon.txt
+public.txt

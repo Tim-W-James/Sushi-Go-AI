@@ -1,6 +1,6 @@
 {-|
 Module      : src\AI.hs
-Description : Defines a set of AIs and associated functions.
+Description : Defines a set of AIs and associated functions. Use "cabal run sushigo" to play.
 Maintainer  : u6947396@anu.edu.au
 -}
 
